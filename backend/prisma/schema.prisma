@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum IntegrationType {
+  META
+  CHURCHSUITE
+  PLANNING_CENTER
+  CANVA
+  STRIPE
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobType {
+  REPORT_GENERATION
+  AD_COPY
+  ATTRIBUTION
+  EMAIL
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  subdomain   String   @unique
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  phone       String?
+  logo        String?
+  primaryColor String  @default("#3b82f6")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  members     Member[]
+  services    Service[]
+  campaigns   Campaign[]
+  integrations Integration[]
+  jobs        Job[]
+
+  @@index([subdomain])
+  @@index([name])
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  password       String
+  firstName      String
+  lastName       String
+  role           Role      @default(MEMBER)
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  attendances    Attendance[]
+  giving         Giving[]
+  jobs           Job[]
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+model Member {
+  id             String    @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  dateOfBirth    DateTime?
+  baptismDate    DateTime?
+  memberSince    DateTime  @default(now())
+  isActive       Boolean   @default(true)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  attendances    Attendance[]
+  giving         Giving[]
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([lastName])
+}
+
+model Service {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  scheduledAt    DateTime
+  duration       Int       @default(60) // minutes
+  serviceType    String    @default("Worship")
+  expectedCount  Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  attendances    Attendance[]
+
+  @@index([scheduledAt])
+  @@index([organizationId])
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  count      Int      @default(0)
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  serviceId  String
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+
+  memberId   String?
+  member     Member?  @relation(fields: [memberId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([organizationId])
+}
+
+model Campaign {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  goal           Decimal   @db.Decimal(10, 2)
+  raised         Decimal   @default(0) @db.Decimal(10, 2)
+  startDate      DateTime
+  endDate        DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  giving         Giving[]
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+model Giving {
+  id             String      @id @default(cuid())
+  amount         Decimal     @db.Decimal(10, 2)
+  currency       String      @default("USD")
+  type           String      @default("tithe") // tithe, offering, donation, campaign
+  method         String      @default("online") // cash, check, online
+  status         String      @default("completed") // pending, completed, failed, refunded
+  transactionId  String?
+  donorName      String?
+  anonymous      Boolean     @default(false)
+  notes          String?
+  createdAt      DateTime    @default(now())
+
+  memberId       String?
+  member         Member?     @relation(fields: [memberId], references: [id])
+
+  campaignId     String?
+  campaign       Campaign?   @relation(fields: [campaignId], references: [id])
+
+  userId         String?
+  user           User?       @relation(fields: [userId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([campaignId])
+  @@index([organizationId])
+  @@index([createdAt])
+}
+
+model Integration {
+  id             String           @id @default(cuid())
+  type           IntegrationType
+  name           String
+  apiKey         String?
+  apiSecret      String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiry    DateTime?
+  config         Json?
+  isActive       Boolean          @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([type])
+}
+
+model Job {
+  id             String    @id @default(cuid())
+  type           JobType
+  status         JobStatus @default(PENDING)
+  data           Json?
+  result         Json?
+  error          String?
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  scheduledFor   DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId         String?
+  user           User?      @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([organizationId])
+  @@index([type])
+}
